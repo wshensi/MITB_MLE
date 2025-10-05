@@ -1,43 +1,37 @@
-# last updated Mar 25 2025, 11:00am
-FROM python:3.12-slim
+# last updated Oct 2025
+# ✅ 使用自带 OpenJDK 17 的官方镜像，避免 apt 找不到包的问题
+FROM openjdk:17-slim
 
-# Set non-interactive mode for apt-get
+# 设置非交互模式，避免 apt 卡住
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Java (OpenJDK 17 headless), procps (for 'ps') and bash
+# 安装 Python、pip、procps（支持 ps 命令）和 bash
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends openjdk-17-jdk-headless procps bash && \
-    rm -rf /var/lib/apt/lists/* && \
-    # Ensure Spark’s scripts run with bash instead of dash
-    ln -sf /bin/bash /bin/sh && \
-    # Create expected JAVA_HOME directory and symlink the java binary there (only if missing)
-    mkdir -p /usr/lib/jvm/java-17-openjdk-amd64/bin && \
-    [ -f /usr/lib/jvm/java-17-openjdk-amd64/bin/java ] || ln -s "$(which java)" /usr/lib/jvm/java-17-openjdk-amd64/bin/java
-    
+    apt-get install -y --no-install-recommends python3 python3-pip procps bash && \
+    rm -rf /var/lib/apt/lists/*
 
-# Set JAVA_HOME to the directory expected by Spark
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-ENV PATH=$PATH:$JAVA_HOME/bin
+# 创建 python / pip 命令软链接（某些镜像只带 python3 命令）
+RUN ln -s /usr/bin/python3 /usr/bin/python || true && \
+    ln -s /usr/bin/pip3 /usr/bin/pip || true
 
-# Set the working directory
+
+# 设置工作目录
 WORKDIR /app
 
-# Copy the requirements file into the container
+# 复制依赖文件到容器
 COPY requirements.txt ./
 
-# Install Python dependencies (ensure that pyspark is in your requirements.txt,
-# or you can install it explicitly by uncommenting the next line)
+# 安装 Python 依赖（建议 requirements.txt 里包括 pyspark、jupyterlab 等）
 RUN pip install --no-cache-dir -r requirements.txt
-# RUN pip install pyspark
 
-# Expose the default JupyterLab port
+# 暴露 JupyterLab 默认端口
 EXPOSE 8888
 
-# Create a volume mount point for notebooks
+# 挂载 notebooks 的工作目录
 VOLUME /app
 
-# Enable JupyterLab via environment variable
+# 启用 JupyterLab
 ENV JUPYTER_ENABLE_LAB=yes
 
-# Set up the command to run JupyterLab
+# 启动命令：运行 JupyterLab
 CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--notebook-dir=/app"]

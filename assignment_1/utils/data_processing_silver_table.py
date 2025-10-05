@@ -48,7 +48,13 @@ def process_silver_table(snapshot_date_str, bronze_lms_directory, silver_loan_da
     df = df.withColumn("mob", col("installment_num").cast(IntegerType()))
 
     # augment data: add days past due
-    df = df.withColumn("installments_missed", F.ceil(col("overdue_amt") / col("due_amt")).cast(IntegerType())).fillna(0)
+    # df = df.withColumn("installments_missed", F.ceil(col("overdue_amt") / col("due_amt")).cast(IntegerType())).fillna(0)
+    # 当due_amt为0时，我们设置installments_missed为0，因为逾期金额除以0没有意义，但根据业务逻辑，如果due_amt为0，则可能没有到期金额，那么逾期期数应为0。
+    df = df.withColumn("installments_missed", 
+                       F.when(col("due_amt") != 0, F.ceil(col("overdue_amt") / col("due_amt")))
+                       .otherwise(0)
+                       .cast(IntegerType()))
+    
     df = df.withColumn("first_missed_date", F.when(col("installments_missed") > 0, F.add_months(col("snapshot_date"), -1 * col("installments_missed"))).cast(DateType()))
     df = df.withColumn("dpd", F.when(col("overdue_amt") > 0.0, F.datediff(col("snapshot_date"), col("first_missed_date"))).otherwise(0).cast(IntegerType()))
 

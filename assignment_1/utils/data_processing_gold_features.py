@@ -24,10 +24,22 @@ def process_gold_customer_feature_store(snapshot_date_str, silver_dir, gold_dir,
         .join(fin, on=["Customer_ID", "snapshot_date"], how="left")
     )
 
-    # Label column (optional)
-    # Example: 30-day delinquency label
-    if "dpd" in df.columns:
-        df = df.withColumn("label_default_30dpd", F.when(F.col("dpd") >= 30, 1).otherwise(0))
+    dpd_threshold = 30  
+    mob_threshold = 6    
+
+    if "dpd" in df.columns and "mob" in df.columns:  
+        df = df.withColumn(
+            "label_default_30dpd",
+            F.when(
+                (F.col("dpd") >= dpd_threshold) & (F.col("mob") >= mob_threshold), 
+                1
+            ).otherwise(0)
+        )
+    elif "dpd" in df.columns:   
+        df = df.withColumn(
+            "label_default_30dpd",
+            F.when(F.col("dpd") >= dpd_threshold, 1).otherwise(0)
+        )
 
     # Write to Gold layer
     gold_file = f"gold_feature_store_{suffix}.parquet"

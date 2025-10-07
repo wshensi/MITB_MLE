@@ -32,7 +32,7 @@ def process_bronze_clickstream(snapshot_date_str, bronze_dir, spark):
 def process_silver_clickstream(snapshot_date_str, bronze_dir, silver_dir, spark):
     """
     Read clickstream data from the bronze layer, perform cleaning, type casting,
-    and feature aggregation, then save as a Parquet file in the silver layer.
+    and feature aggregation, then save the result as a Parquet file in the silver layer.
     """
     file_name = f"bronze_clickstream_{snapshot_date_str.replace('-', '_')}.csv"
     input_path = os.path.join(bronze_dir, file_name)
@@ -43,22 +43,26 @@ def process_silver_clickstream(snapshot_date_str, bronze_dir, silver_dir, spark)
     # Type casting for expected columns
     if 'Customer_ID' in df.columns:
         df = df.withColumn("Customer_ID", F.col("Customer_ID").cast(StringType()))
-    if 'snapshot_date' in df.columns:
-        df = df.withColumn("snapshot_date", F.to_date("snapshot_date"))
+    # Convert snapshot_date to DateType to ensure consistency with other tables during joins
+    df = df.withColumn("snapshot_date", F.to_date(F.lit(snapshot_date_str)))
 
-    # Print schema to check available fields
+    # Print schema to check the available fields
     df.printSchema()
 
-    # Feature aggregation:
-    # Count total number of clickstream records per Customer_ID
-    # (Remove session_id aggregation since it doesn't exist in your dataset)
-    df = df.groupBy("Customer_ID").agg(
+    # Feature aggregation
+    # Count the total number of clickstream records for each Customer_ID and snapshot_date
+    df = df.groupBy("Customer_ID", "snapshot_date").agg(
         F.count("*").alias("total_clicks")
     )
 
-    # Save cleaned and aggregated data as a Parquet file
+    # Ensure the output directory exists
+    output_dir = os.path.join(silver_dir, "clickstream")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+
+    # Save the cleaned and aggregated data as a Parquet file
     silver_file = f"silver_clickstream_{snapshot_date_str.replace('-', '_')}.parquet"
-    output_path = os.path.join(silver_dir, silver_file)
+    output_path = os.path.join(output_dir, silver_file)
     df.write.mode("overwrite").parquet(output_path)
 
     print(f"[SILVER][clickstream] saved to: {output_path}, columns: {len(df.columns)}")

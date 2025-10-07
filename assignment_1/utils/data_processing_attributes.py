@@ -63,8 +63,13 @@ def process_silver_attributes(snapshot_date_str, bronze_dir, silver_dir, spark):
 
     #  Save cleaned and enriched data as a Parquet file
     silver_file = f"silver_attributes_{snapshot_date_str.replace('-', '_')}.parquet"
-    output_path = os.path.join(silver_dir, silver_file)
+    output_dir = os.path.join(silver_dir, "attributes")  
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+
+    output_path = os.path.join(output_dir, silver_file)
     df.write.mode("overwrite").parquet(output_path)
 
     print(f"[SILVER][attributes] saved to: {output_path}, columns: {len(df.columns)}")
     return df
+

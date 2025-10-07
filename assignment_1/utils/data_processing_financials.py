@@ -123,8 +123,14 @@ def process_silver_financials(snapshot_date_str, bronze_dir, silver_dir, spark):
 
     # --- Save as Parquet ---
     silver_file = f"silver_financials_{snapshot_date_str.replace('-', '_')}.parquet"
-    output_path = os.path.join(silver_dir, silver_file)
+    output_dir = os.path.join(silver_dir, "financials") 
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+
+    output_path = os.path.join(output_dir, silver_file)
     df.write.mode("overwrite").parquet(output_path)
 
     print(f"[SILVER][financials] saved to: {output_path}, columns: {len(df.columns)}")
     return df
+

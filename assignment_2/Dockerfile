@@ -1,6 +1,6 @@
 # last updated Oct 2025
 # Using official OpenJDK 17 image to avoid apt package issues
-FROM openjdk:17-slim
+FROM mcr.microsoft.com/openjdk/jdk:17-ubuntu
 
 # Set non-interactive mode to prevent apt from hanging
 ENV DEBIAN_FRONTEND=noninteractive

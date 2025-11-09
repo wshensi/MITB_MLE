@@ -1,0 +1,10 @@
+{
+    "n_predictions": 2500,
+    "n_actuals": 12000,
+    "n_matched": 2500,
+    "match_rate": 1.0,
+    "date_range": {
+        "min": "2024-08-01",
+        "max": "2024-12-01"
+    }
+}

@@ -1,0 +1,7 @@
+{
+    "n_samples": 2500,
+    "n_features": 13,
+    "inference_start_date": "2024-08-01",
+    "inference_end_date": "2024-12-01",
+    "prepared_timestamp": "2025-11-09 07:44:51"
+}

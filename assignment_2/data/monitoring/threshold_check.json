@@ -1,0 +1,18 @@
+{
+    "needs_retraining": true,
+    "reasons": [
+        "AUC below threshold: 0.5038 < 0.65"
+    ],
+    "checked_timestamp": "2025-11-09 07:45:21",
+    "thresholds": {
+        "performance": {
+            "auc": 0.65,
+            "precision": 0.7
+        },
+        "drift": 0.2
+    },
+    "current_metrics": {
+        "avg_auc": 0.5038218777098074,
+        "max_psi": 0.10371648006599772
+    }
+}

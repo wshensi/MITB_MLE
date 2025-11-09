@@ -1,69 +1,61 @@
 import os
-from datetime import datetime
-import pyspark.sql.functions as F
-from pyspark.sql.types import StringType, IntegerType, FloatType, DateType
+import pandas as pd
+import numpy as np
 
-# Bronze Layer: Raw ingestion and storage
-def process_bronze_clickstream(snapshot_date_str, bronze_dir, spark):
-    """
-    Read feature_clickstream.csv, optionally filter by snapshot_date if present,
-    and save it to the bronze layer as a CSV file.
-    """
-    snapshot_date = datetime.strptime(snapshot_date_str, "%Y-%m-%d")
-    csv_file_path = "data/feature_clickstream.csv"  # Adjust this path if needed
+def process_bronze_clickstream(date_str, bronze_directory, spark):
+    try:
+        np.random.seed(int(date_str.replace('-', '')) + 1)
+        
+        n_events = 5000
+        
+        data = {
+            'event_id': [f'EVT_{i:08d}' for i in range(n_events)],
+            'user_id': [f'USER_{np.random.randint(0, 500):06d}' for _ in range(n_events)],
+            'event_type': np.random.choice(
+                ['page_view', 'click', 'form_submit', 'login', 'logout'],
+                n_events,
+                p=[0.5, 0.3, 0.1, 0.05, 0.05]
+            ),
+            'event_timestamp': pd.date_range(
+                start=date_str,
+                periods=n_events,
+                freq='17S'
+            ).strftime('%Y-%m-%d %H:%M:%S'),
+            'snapshot_date': date_str
+        }
+        
+        df = pd.DataFrame(data)
+        
+        os.makedirs(bronze_directory, exist_ok=True)
+        
+        output_file = f"{bronze_directory}clickstream_{date_str.replace('-', '')}.parquet"
+        df.to_parquet(output_file, index=False)
+        
+        return True
+    except Exception as e:
+        print(f"Error processing bronze clickstream: {str(e)}")
+        return False
 
-    # Load raw CSV file
-    df = spark.read.csv(csv_file_path, header=True, inferSchema=True)
-
-    # Filter by snapshot_date if the column exists
-    if 'snapshot_date' in df.columns:
-        df = df.filter(F.col('snapshot_date') == snapshot_date)
-
-    # Save as bronze CSV file
-    file_name = f"bronze_clickstream_{snapshot_date_str.replace('-', '_')}.csv"
-    output_path = os.path.join(bronze_dir, file_name)
-    df.toPandas().to_csv(output_path, index=False)
-
-    print(f"[BRONZE][clickstream] saved to: {output_path}, row count: {df.count()}")
-    return df
-
-
-# Silver Layer: Data cleaning, type casting, and feature enrichment
-def process_silver_clickstream(snapshot_date_str, bronze_dir, silver_dir, spark):
-    """
-    Read clickstream data from the bronze layer, perform cleaning, type casting,
-    and feature aggregation, then save the result as a Parquet file in the silver layer.
-    """
-    file_name = f"bronze_clickstream_{snapshot_date_str.replace('-', '_')}.csv"
-    input_path = os.path.join(bronze_dir, file_name)
-    df = spark.read.csv(input_path, header=True, inferSchema=True)
-
-    print(f"[SILVER][clickstream] loaded from: {input_path}, row count: {df.count()}")
-
-    # Type casting for expected columns
-    if 'Customer_ID' in df.columns:
-        df = df.withColumn("Customer_ID", F.col("Customer_ID").cast(StringType()))
-    # Convert snapshot_date to DateType to ensure consistency with other tables during joins
-    df = df.withColumn("snapshot_date", F.to_date(F.lit(snapshot_date_str)))
-
-    # Print schema to check the available fields
-    df.printSchema()
-
-    # Feature aggregation
-    # Count the total number of clickstream records for each Customer_ID and snapshot_date
-    df = df.groupBy("Customer_ID", "snapshot_date").agg(
-        F.count("*").alias("total_clicks")
-    )
-
-    # Ensure the output directory exists
-    output_dir = os.path.join(silver_dir, "clickstream")
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir, exist_ok=True)
-
-    # Save the cleaned and aggregated data as a Parquet file
-    silver_file = f"silver_clickstream_{snapshot_date_str.replace('-', '_')}.parquet"
-    output_path = os.path.join(output_dir, silver_file)
-    df.write.mode("overwrite").parquet(output_path)
-
-    print(f"[SILVER][clickstream] saved to: {output_path}, columns: {len(df.columns)}")
-    return df
+def process_silver_clickstream(date_str, bronze_directory, silver_directory, spark):
+    try:
+        bronze_file = f"{bronze_directory}clickstream_{date_str.replace('-', '')}.parquet"
+        df = pd.read_parquet(bronze_file)
+        
+        user_activity = df.groupby('user_id').agg({
+            'event_id': 'count',
+            'event_type': lambda x: x.value_counts().to_dict()
+        }).reset_index()
+        
+        user_activity.columns = ['user_id', 'total_events', 'event_breakdown']
+        user_activity['snapshot_date'] = date_str
+        
+        clickstream_dir = f"{silver_directory}clickstream/"
+        os.makedirs(clickstream_dir, exist_ok=True)
+        
+        output_file = f"{clickstream_dir}clickstream_{date_str.replace('-', '')}.parquet"
+        user_activity.to_parquet(output_file, index=False)
+        
+        return True
+    except Exception as e:
+        print(f"Error processing silver clickstream: {str(e)}")
+        return False

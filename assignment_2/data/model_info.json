@@ -1,0 +1,36 @@
+{
+    "model_path": "/app/models/model_artifacts/logistic_regression_20251109_082951.joblib",
+    "metadata_path": "/app/models/model_metadata/logistic_regression_20251109_082951_metadata.json",
+    "model_name": "logistic_regression",
+    "feature_columns": [
+        "avg_loan_amount",
+        "total_loan_amount",
+        "num_loans",
+        "avg_interest_rate",
+        "avg_monthly_payment",
+        "avg_loan_age_days",
+        "credit_score",
+        "income",
+        "debt_to_income",
+        "utilization_rate",
+        "num_credit_accounts",
+        "age",
+        "employment_length_years"
+    ],
+    "metrics": {
+        "auc": 0.4771722722175008,
+        "precision": 0.07214206437291898,
+        "recall": 0.4421768707482993,
+        "f1": 0.12404580152671754,
+        "confusion_matrix": [
+            [
+                917,
+                836
+            ],
+            [
+                82,
+                65
+            ]
+        ]
+    }
+}

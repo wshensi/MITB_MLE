@@ -1,0 +1,87 @@
+{
+    "model_name": "random_forest",
+    "model_path": "/app/models/model_artifacts/random_forest_20251109_073416.joblib",
+    "timestamp": "20251109_073416",
+    "metrics": {
+        "auc": 0.5707451435198608,
+        "precision": 0.11519497982967279,
+        "recall": 1.0,
+        "f1": 0.20659163987138265,
+        "confusion_matrix": [
+            [
+                1952,
+                11844
+            ],
+            [
+                0,
+                1542
+            ]
+        ]
+    },
+    "feature_columns": [
+        "due_amt",
+        "total_clicks",
+        "Age",
+        "Annual_Income",
+        "Monthly_Inhand_Salary",
+        "Num_Bank_Accounts",
+        "Num_Credit_Card",
+        "Interest_Rate",
+        "Num_of_Loan",
+        "Delay_from_due_date",
+        "Num_of_Delayed_Payment",
+        "Changed_Credit_Limit",
+        "Num_Credit_Inquiries",
+        "Outstanding_Debt",
+        "Total_EMI_per_month",
+        "Amount_invested_monthly",
+        "Monthly_Balance",
+        "Credit_Mix_Score",
+        "Credit_History_Months",
+        "Payment_Min_Amount_Flag",
+        "Type_of_Loan_Count"
+    ],
+    "n_features": 21,
+    "all_models_comparison": {
+        "logistic_regression": {
+            "auc": 0.5,
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "confusion_matrix": [
+                [
+                    13796,
+                    0
+                ],
+                [
+                    1542,
+                    0
+                ]
+            ]
+        },
+        "random_forest": {
+            "auc": 0.5707451435198608,
+            "precision": 0.11519497982967279,
+            "recall": 1.0,
+            "f1": 0.20659163987138265,
+            "confusion_matrix": [
+                [
+                    1952,
+                    11844
+                ],
+                [
+                    0,
+                    1542
+                ]
+            ]
+        }
+    },
+    "selection_criteria": "auc",
+    "data_leakage_prevention": {
+        "temporal_split": true,
+        "leakage_features_removed": true,
+        "description": "Removed dpd, overdue_amt, and other post-loan features"
+    },
+    "deployment_ready": true,
+    "version": "1.0"
+}

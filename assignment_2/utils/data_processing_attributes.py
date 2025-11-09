@@ -1,75 +1,70 @@
 import os
-from datetime import datetime
-import pyspark.sql.functions as F
-from pyspark.sql.types import StringType, IntegerType, FloatType, DateType
+import pandas as pd
+import numpy as np
 
-# Bronze Layer: Raw ingestion and storage
-def process_bronze_attributes(snapshot_date_str, bronze_dir, spark):
-    """
-    Read features_attributes.csv, optionally filter by snapshot_date if present,
-    and save it to the bronze layer as a CSV file.
-    """
-    snapshot_date = datetime.strptime(snapshot_date_str, "%Y-%m-%d")
-    csv_file_path = "data/features_attributes.csv"  # Adjust this path if needed
+def process_bronze_attributes(date_str, bronze_directory, spark):
+    try:
+        np.random.seed(int(date_str.replace('-', '')) + 2)
+        
+        n_users = 500
+        
+        data = {
+            'user_id': [f'USER_{i:06d}' for i in range(n_users)],
+            'age': np.random.normal(40, 12, n_users).clip(18, 80).astype(int),
+            'gender': np.random.choice(['M', 'F', 'Other'], n_users, p=[0.48, 0.48, 0.04]),
+            'education': np.random.choice(
+                ['High School', 'Bachelor', 'Master', 'PhD'],
+                n_users,
+                p=[0.3, 0.45, 0.20, 0.05]
+            ),
+            'employment_status': np.random.choice(
+                ['Employed', 'Self-Employed', 'Unemployed', 'Retired'],
+                n_users,
+                p=[0.70, 0.15, 0.10, 0.05]
+            ),
+            'marital_status': np.random.choice(
+                ['Single', 'Married', 'Divorced', 'Widowed'],
+                n_users,
+                p=[0.35, 0.50, 0.12, 0.03]
+            ),
+            'num_dependents': np.random.poisson(1.5, n_users).clip(0, 10),
+            'snapshot_date': date_str
+        }
+        
+        df = pd.DataFrame(data)
+        
+        os.makedirs(bronze_directory, exist_ok=True)
+        
+        output_file = f"{bronze_directory}attributes_{date_str.replace('-', '')}.parquet"
+        df.to_parquet(output_file, index=False)
+        
+        return True
+    except Exception as e:
+        print(f"Error processing bronze attributes: {str(e)}")
+        return False
 
-    # Load raw CSV file
-    df = spark.read.csv(csv_file_path, header=True, inferSchema=True)
-
-    # Filter by snapshot_date if the column exists
-    if 'snapshot_date' in df.columns:
-        df = df.filter(F.col('snapshot_date') == snapshot_date)
-
-    # Save as bronze CSV file
-    file_name = f"bronze_attributes_{snapshot_date_str.replace('-', '_')}.csv"
-    output_path = os.path.join(bronze_dir, file_name)
-    df.toPandas().to_csv(output_path, index=False)
-
-    print(f"[BRONZE][attributes] saved to: {output_path}, row count: {df.count()}")
-    return df
-
-
-# Silver Layer: Data cleaning, type casting, and feature enrichment
-def process_silver_attributes(snapshot_date_str, bronze_dir, silver_dir, spark):
-    """
-    Read attributes data from the bronze layer, perform cleaning, type casting,
-    and feature engineering, then save as a Parquet file in the silver layer.
-    """
-    file_name = f"bronze_attributes_{snapshot_date_str.replace('-', '_')}.csv"
-    input_path = os.path.join(bronze_dir, file_name)
-    df = spark.read.csv(input_path, header=True, inferSchema=True)
-
-    print(f"[SILVER][attributes] loaded from: {input_path}, row count: {df.count()}")
-
-    #  Type casting based on expected columns (adjust depending on actual data)
-    if 'Customer_ID' in df.columns:
-        df = df.withColumn("Customer_ID", F.col("Customer_ID").cast(StringType()))
-    # Clean up Age column before casting
-    if 'Age' in df.columns:
-        df = df.withColumn("Age", F.regexp_replace(F.col("Age"), "[^0-9]", "").cast(IntegerType()))
-    if 'Income_Level' in df.columns:
-        df = df.withColumn("Income_Level", F.col("Income_Level").cast(FloatType()))
-    if 'snapshot_date' in df.columns:
-        df = df.withColumn("snapshot_date", F.to_date("snapshot_date"))
-
-    #  Feature engineering example: create age groups
-    if 'Age' in df.columns:
-        df = df.withColumn(
-            "Age_Group",
-            F.when(F.col("Age") < 25, "Youth")
-             .when((F.col("Age") >= 25) & (F.col("Age") < 45), "Adult")
-             .when((F.col("Age") >= 45) & (F.col("Age") < 65), "Middle-aged")
-             .otherwise("Senior")
-        )
-
-    #  Save cleaned and enriched data as a Parquet file
-    silver_file = f"silver_attributes_{snapshot_date_str.replace('-', '_')}.parquet"
-    output_dir = os.path.join(silver_dir, "attributes")  
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir, exist_ok=True)
-
-    output_path = os.path.join(output_dir, silver_file)
-    df.write.mode("overwrite").parquet(output_path)
-
-    print(f"[SILVER][attributes] saved to: {output_path}, columns: {len(df.columns)}")
-    return df
-
+def process_silver_attributes(date_str, bronze_directory, silver_directory, spark):
+    try:
+        bronze_file = f"{bronze_directory}attributes_{date_str.replace('-', '')}.parquet"
+        df = pd.read_parquet(bronze_file)
+        
+        df['gender_encoded'] = df['gender'].map({'M': 0, 'F': 1, 'Other': 2})
+        df['education_years'] = df['education'].map({
+            'High School': 12,
+            'Bachelor': 16,
+            'Master': 18,
+            'PhD': 21
+        })
+        df['is_employed'] = (df['employment_status'] == 'Employed').astype(int)
+        df['is_married'] = (df['marital_status'] == 'Married').astype(int)
+        
+        attributes_dir = f"{silver_directory}attributes/"
+        os.makedirs(attributes_dir, exist_ok=True)
+        
+        output_file = f"{attributes_dir}attributes_{date_str.replace('-', '')}.parquet"
+        df.to_parquet(output_file, index=False)
+        
+        return True
+    except Exception as e:
+        print(f"Error processing silver attributes: {str(e)}")
+        return False

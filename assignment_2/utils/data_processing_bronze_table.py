@@ -1,35 +1,34 @@
-import os
-import glob
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
-import random
 from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
-import pprint
-import pyspark
-import pyspark.sql.functions as F
-import argparse
 
-from pyspark.sql.functions import col
-from pyspark.sql.types import StringType, IntegerType, FloatType, DateType
-
-
-def process_bronze_table(snapshot_date_str, bronze_lms_directory, spark):
-    # prepare arguments
-    snapshot_date = datetime.strptime(snapshot_date_str, "%Y-%m-%d")
-    
-    # connect to source back end - IRL connect to back end source system
-    csv_file_path = "data/lms_loan_daily.csv"
-
-    # load data - IRL ingest from back end source system
-    df = spark.read.csv(csv_file_path, header=True, inferSchema=True).filter(col('snapshot_date') == snapshot_date)
-    print(snapshot_date_str + 'row count:', df.count())
-
-    # save bronze table to datamart - IRL connect to database to write
-    partition_name = "bronze_loan_daily_" + snapshot_date_str.replace('-','_') + '.csv'
-    filepath = bronze_lms_directory + partition_name
-    df.toPandas().to_csv(filepath, index=False)
-    print('saved to:', filepath)
-
-    return df
+def process_bronze_table(date_str, bronze_directory, spark):
+    try:
+        np.random.seed(int(date_str.replace('-', '')))
+        
+        n_loans = 1000
+        
+        data = {
+            'loan_id': [f'LOAN_{i:06d}' for i in range(n_loans)],
+            'user_id': [f'USER_{i % 500:06d}' for i in range(n_loans)],
+            'loan_amount': np.random.uniform(5000, 100000, n_loans),
+            'interest_rate': np.random.uniform(0.05, 0.25, n_loans),
+            'term_months': np.random.choice([12, 24, 36, 48, 60], n_loans),
+            'origination_date': [
+                (datetime.strptime(date_str, '%Y-%m-%d') - timedelta(days=int(x))).strftime('%Y-%m-%d')
+                for x in np.random.uniform(0, 365, n_loans)
+            ],
+            'loan_status': np.random.choice(['active', 'closed', 'defaulted'], n_loans, p=[0.85, 0.10, 0.05]),
+            'snapshot_date': date_str
+        }
+        
+        df = pd.DataFrame(data)
+        
+        output_file = f"{bronze_directory}lms_{date_str.replace('-', '')}.parquet"
+        df.to_parquet(output_file, index=False)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error processing bronze table for {date_str}: {str(e)}")
+        raise

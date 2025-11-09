@@ -1,0 +1,30 @@
+{
+    "feature_columns": [
+        "avg_loan_amount",
+        "total_loan_amount",
+        "num_loans",
+        "avg_interest_rate",
+        "avg_monthly_payment",
+        "avg_loan_age_days",
+        "credit_score",
+        "income",
+        "debt_to_income",
+        "utilization_rate",
+        "num_credit_accounts",
+        "age",
+        "employment_length_years"
+    ],
+    "n_features": 13,
+    "n_train": 14028,
+    "n_test": 1900,
+    "class_distribution_train": {
+        "0": 7014,
+        "1": 7014
+    },
+    "class_distribution_test": {
+        "0": 1753,
+        "1": 147
+    },
+    "training_cutoff_date": "2024-08-01",
+    "prepared_timestamp": "2025-11-09 08:45:51"
+}

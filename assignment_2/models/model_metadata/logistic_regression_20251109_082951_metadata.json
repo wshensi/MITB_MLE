@@ -1,0 +1,79 @@
+{
+    "model_name": "logistic_regression",
+    "model_path": "/app/models/model_artifacts/logistic_regression_20251109_082951.joblib",
+    "timestamp": "20251109_082951",
+    "metrics": {
+        "auc": 0.4771722722175008,
+        "precision": 0.07214206437291898,
+        "recall": 0.4421768707482993,
+        "f1": 0.12404580152671754,
+        "confusion_matrix": [
+            [
+                917,
+                836
+            ],
+            [
+                82,
+                65
+            ]
+        ]
+    },
+    "feature_columns": [
+        "avg_loan_amount",
+        "total_loan_amount",
+        "num_loans",
+        "avg_interest_rate",
+        "avg_monthly_payment",
+        "avg_loan_age_days",
+        "credit_score",
+        "income",
+        "debt_to_income",
+        "utilization_rate",
+        "num_credit_accounts",
+        "age",
+        "employment_length_years"
+    ],
+    "n_features": 13,
+    "all_models_comparison": {
+        "logistic_regression": {
+            "auc": 0.4771722722175008,
+            "precision": 0.07214206437291898,
+            "recall": 0.4421768707482993,
+            "f1": 0.12404580152671754,
+            "confusion_matrix": [
+                [
+                    917,
+                    836
+                ],
+                [
+                    82,
+                    65
+                ]
+            ]
+        },
+        "random_forest": {
+            "auc": 0.4601363648711053,
+            "precision": 0.06451612903225806,
+            "recall": 0.23129251700680273,
+            "f1": 0.10089020771513355,
+            "confusion_matrix": [
+                [
+                    1260,
+                    493
+                ],
+                [
+                    113,
+                    34
+                ]
+            ]
+        }
+    },
+    "selection_criteria": "auc",
+    "data_leakage_prevention": {
+        "temporal_split": true,
+        "leakage_features_removed": true,
+        "description": "Removed dpd, overdue_amt, and other post-loan features"
+    },
+    "deployment_ready": true,
+    "version": "1.0"
+}

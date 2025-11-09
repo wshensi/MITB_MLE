@@ -1,295 +1,352 @@
-"""
-ML Pipeline DAG
-Orchestrates end-to-end ML workflow: Training -> Inference -> Monitoring
-"""
-from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.operators.bash import BashOperator
+from airflow.operators.python import PythonOperator, BranchPythonOperator
+from airflow.operators.dummy import DummyOperator
+from airflow.utils.task_group import TaskGroup
+from datetime import datetime, timedelta
 import sys
 import os
 
-# Add paths
 sys.path.insert(0, '/app')
-sys.path.insert(0, '/app/dags')
 
-print(f"Python path: {sys.path}")
-print(f"Current working directory: {os.getcwd()}")
+from utils.data_processing_tasks import (
+    load_bronze_data,
+    process_silver_data,
+    process_gold_features
+)
+from utils.model_training_tasks import (
+    prepare_training_data,
+    train_logistic_regression,
+    train_random_forest,
+    evaluate_and_select_best_model,
+    save_best_model
+)
+from utils.model_inference_tasks import (
+    load_model_for_inference,
+    prepare_inference_data,
+    execute_predictions
+)
+from utils.model_monitoring_tasks import (
+    load_monitoring_data,
+    calculate_performance_metrics,
+    calculate_drift_metrics,
+    check_thresholds,
+    generate_monitoring_report
+)
 
-# Import configuration
-try:
-    from config import (
-        DEFAULT_DAG_ARGS, 
-        PATHS, 
-        MODEL_CONFIG,
-        TRAINING_CUTOFF_DATE,
-        INFERENCE_START_DATE,
-        END_DATE_STR,
-        MONITORING_CONFIG,
-        MODEL_REFRESH_POLICY
-    )
-    print("✓ Config imported successfully")
-except ImportError as e:
-    print(f"⚠️  Using default config due to import error: {e}")
-    DEFAULT_DAG_ARGS = {
-        'owner': 'ml_engineer',
-        'depends_on_past': False,
-        'start_date': datetime(2023, 1, 1),
-        'retries': 1,
-        'retry_delay': timedelta(minutes=5),
-    }
-    PATHS = {
-        "gold_features": "/app/datamart/gold/feature_label_store",
-        "gold_predictions": "/app/datamart/gold/predictions",
-        "gold_monitoring": "/app/datamart/gold/monitoring_metrics",
-        "models": "/app/models/model_artifacts",
-        "model_metadata": "/app/models/model_metadata",
-    }
-    MODEL_CONFIG = {
-        "test_size": 0.2,
-        "random_state": 42,
-        "dpd_threshold": 30,
-        "mob_threshold": 6
-    }
-    TRAINING_CUTOFF_DATE = "2024-06-01"
-    INFERENCE_START_DATE = "2024-06-01"
-    END_DATE_STR = "2024-12-01"
-    MONITORING_CONFIG = {
-        "baseline_date": "2024-06-01"
-    }
-    MODEL_REFRESH_POLICY = {
-        "performance_threshold": {"auc": 0.65, "precision": 0.70},
-        "drift_threshold": 0.1
-    }
+snapshot_date_str = "2023-01-01"
+start_date_str = "2023-01-01"
+end_date_str = "2024-12-01"
 
-# Import utils - 尝试多种导入方式
-HAS_UTILS = False
-import_errors = []
+training_cutoff_date_str = "2024-08-01"
 
-# 方法 1: 从 /app/utils 导入
-try:
-    from utils.model_training import train_and_save_best_model
-    from utils.model_inference import run_inference_for_period
-    from utils.model_monitoring import run_monitoring
-    HAS_UTILS = True
-    print("✓ Utils imported from /app/utils/")
-except ImportError as e:
-    import_errors.append(f"Method 1 failed: {e}")
+inference_start_date_str = "2024-08-01"
+inference_end_date_str = "2024-12-01"
 
-# 方法 2: 直接添加 utils 到路径
-if not HAS_UTILS:
-    try:
-        sys.path.insert(0, '/app/utils')
-        import model_training
-        import model_inference
-        import model_monitoring
-        train_and_save_best_model = model_training.train_and_save_best_model
-        run_inference_for_period = model_inference.run_inference_for_period
-        run_monitoring = model_monitoring.run_monitoring
-        HAS_UTILS = True
-        print("✓ Utils imported via direct path")
-    except ImportError as e:
-        import_errors.append(f"Method 2 failed: {e}")
+monitoring_baseline_date_str = "2024-12-01"
 
-# 如果都失败了，打印详细信息
-if not HAS_UTILS:
-    print("❌ All import methods failed!")
-    for error in import_errors:
-        print(f"  - {error}")
-    
-    # 打印目录内容用于调试
-    print("\nDirectory listing:")
-    for path in ['/app', '/app/utils', '/app/dags']:
-        try:
-            print(f"\n{path}:")
-            for item in os.listdir(path):
-                print(f"  - {item}")
-        except Exception as e:
-            print(f"  Error listing {path}: {e}")
+performance_threshold = {
+    'auc': 0.50,
+    'precision': 0.50
+}
+drift_threshold = 0.2
 
+BRONZE_DIR = '/app/datamart/bronze/'
+SILVER_DIR = '/app/datamart/silver/'
+GOLD_FEATURE_DIR = '/app/datamart/gold/feature_label_store/'
+PREDICTIONS_DIR = '/app/datamart/gold/predictions/'
+MONITORING_DIR = '/app/datamart/gold/monitoring_metrics/'
 
-def task_train_model(**context):
-    """Task: Train ML models and select best one"""
-    print("="*60)
-    print("TASK: Training ML Models")
-    print("="*60)
-    
-    if not HAS_UTILS:
-        error_msg = "Utils modules not available! Import errors: " + "; ".join(import_errors)
-        print(f"❌ {error_msg}")
-        raise ImportError(error_msg)
-    
-    try:
-        print(f"Loading data from: {PATHS['gold_features']}")
-        print(f"Saving model to: {PATHS['models']}")
-        print(f"Training cutoff date: {TRAINING_CUTOFF_DATE}")
-        
-        result = train_and_save_best_model(
-            gold_feature_path=PATHS['gold_features'],
-            model_dir=PATHS['models'],
-            config=MODEL_CONFIG,
-            training_cutoff_date=TRAINING_CUTOFF_DATE
-        )
-        
-        # Push results to XCom
-        if result and isinstance(result, dict):
-            context['task_instance'].xcom_push(key='model_path', value=result.get('model_path'))
-            context['task_instance'].xcom_push(key='best_model_name', value=result.get('best_model_name'))
-            context['task_instance'].xcom_push(key='training_metrics', value=result.get('metrics'))
-            
-            print(f"\n✅ Training completed!")
-            print(f"  Best model: {result.get('best_model_name')}")
-            print(f"  Model path: {result.get('model_path')}")
-            if 'metrics' in result:
-                print(f"  Metrics: {result['metrics']}")
-        
-        return result
-    
-    except Exception as e:
-        print(f"❌ Error in training: {e}")
-        import traceback
-        traceback.print_exc()
-        raise
+MODEL_ARTIFACTS_DIR = '/app/models/model_artifacts/'
+MODEL_METADATA_DIR = '/app/models/model_metadata/'
+MODEL_TEMP_DIR = '/app/models/temp/'
 
+DATA_PREPARED_DIR = '/app/data/prepared/'
+DATA_INFERENCE_DIR = '/app/data/inference/'
+DATA_MONITORING_DIR = '/app/data/monitoring/'
 
-def task_run_inference(**context):
-    """Task: Run inference on new data"""
-    print("="*60)
-    print("TASK: Running Model Inference")
-    print("="*60)
-    
-    if not HAS_UTILS:
-        error_msg = "Utils modules not available!"
-        print(f"❌ {error_msg}")
-        raise ImportError(error_msg)
-    
-    try:
-        print(f"Model directory: {PATHS['models']}")
-        print(f"Metadata directory: {PATHS['model_metadata']}")
-        print(f"Feature path: {PATHS['gold_features']}")
-        print(f"Output path: {PATHS['gold_predictions']}")
-        print(f"Date range: {INFERENCE_START_DATE} to {END_DATE_STR}")
-        
-        result = run_inference_for_period(
-            model_dir=PATHS['models'],
-            metadata_dir=PATHS['model_metadata'],
-            gold_feature_path=PATHS['gold_features'],
-            predictions_output_path=PATHS['gold_predictions'],
-            start_date=INFERENCE_START_DATE,
-            end_date=END_DATE_STR
-        )
-        
-        # Push results to XCom
-        if result and isinstance(result, dict):
-            context['task_instance'].xcom_push(key='inference_result', value=result)
-            
-            print(f"\n✅ Inference completed!")
-            print(f"  Output file: {result.get('output_file')}")
-            print(f"  Predictions: {result.get('num_predictions')}")
-            print(f"  Default rate: {result.get('default_rate', 0)*100:.2f}%")
-        
-        return result
-    
-    except Exception as e:
-        print(f"❌ Error in inference: {e}")
-        import traceback
-        traceback.print_exc()
-        raise
+default_args = {
+    'owner': 'ml_team',
+    'depends_on_past': False,
+    'email_on_failure': True,
+    'email_on_retry': False,
+    'retries': 2,
+    'retry_delay': timedelta(minutes=5),
+    'execution_timeout': timedelta(hours=2),
+}
 
-
-def task_monitor_model(**context):
-    """Task: Monitor model performance and stability"""
-    print("="*60)
-    print("TASK: Monitoring Model Performance & Stability")
-    print("="*60)
-    
-    if not HAS_UTILS:
-        error_msg = "Utils modules not available!"
-        print(f"❌ {error_msg}")
-        raise ImportError(error_msg)
-    
-    try:
-        print(f"Predictions path: {PATHS['gold_predictions']}")
-        print(f"Features path: {PATHS['gold_features']}")
-        print(f"Output path: {PATHS['gold_monitoring']}")
-        print(f"Baseline date: {MONITORING_CONFIG['baseline_date']}")
-        
-        result = run_monitoring(
-            predictions_path=PATHS['gold_predictions'],
-            gold_feature_path=PATHS['gold_features'],
-            monitoring_output_path=PATHS['gold_monitoring'],
-            baseline_date=MONITORING_CONFIG['baseline_date'],
-            performance_threshold=MODEL_REFRESH_POLICY.get('performance_threshold', {'auc': 0.65}),
-            drift_threshold=MODEL_REFRESH_POLICY.get('drift_threshold', 0.1)
-        )
-        
-        # Push results to XCom
-        if result and isinstance(result, dict):
-            context['task_instance'].xcom_push(key='monitoring_result', value=result)
-            
-            print(f"\n✅ Monitoring completed!")
-            if 'performance_file' in result:
-                print(f"  Performance file: {result['performance_file']}")
-            if 'drift_file' in result:
-                print(f"  Drift file: {result['drift_file']}")
-            
-            # Check retraining recommendation
-            if result.get('needs_retraining', False):
-                print("\n⚠️  WARNING: Model retraining recommended!")
-                if 'retraining_reasons' in result:
-                    for reason in result['retraining_reasons']:
-                        print(f"    - {reason}")
-        
-        return result
-    
-    except Exception as e:
-        print(f"❌ Error in monitoring: {e}")
-        import traceback
-        traceback.print_exc()
-        raise
-
-
-# Define the DAG
-dag = DAG(
-    'ml_pipeline_loan_default',
-    default_args=DEFAULT_DAG_ARGS,
-    description='End-to-end ML pipeline for loan default prediction',
-    schedule_interval=None,  # Manual trigger
+with DAG(
+    dag_id='ml_pipeline_complete',
+    default_args=default_args,
+    description='Complete ML Pipeline with Centralized Date Configuration',
+    schedule_interval=None,
+    start_date=datetime(2025, 1, 1),
     catchup=False,
+    tags=['ml', 'credit_risk', 'production', 'v2.0'],
     max_active_runs=1,
-    tags=['ml', 'credit_risk', 'loan_default'],
-)
+) as dag:
 
-# Task 1: Data processing
-task_data_processing = BashOperator(
-    task_id='data_processing',
-    bash_command='cd /app && python main.py',
-    dag=dag,
-)
+    start = DummyOperator(
+        task_id='start_pipeline',
+    )
 
-# Task 2: Train models
-task_training = PythonOperator(
-    task_id='train_models',
-    python_callable=task_train_model,
-    provide_context=True,
-    dag=dag,
-)
+    with TaskGroup(
+        group_id='data_processing',
+        tooltip='Bronze -> Silver -> Gold data layers'
+    ) as data_processing_group:
 
-# Task 3: Run inference
-task_inference = PythonOperator(
-    task_id='run_inference',
-    python_callable=task_run_inference,
-    provide_context=True,
-    dag=dag,
-)
+        task_bronze = PythonOperator(
+            task_id='load_bronze_data',
+            python_callable=load_bronze_data,
+            op_kwargs={
+                'start_date': start_date_str,
+                'end_date': end_date_str,
+                'bronze_directory': BRONZE_DIR,
+            },
+            provide_context=True,
+        )
 
-# Task 4: Monitor model
-task_monitoring = PythonOperator(
-    task_id='monitor_model',
-    python_callable=task_monitor_model,
-    provide_context=True,
-    dag=dag,
-)
+        task_silver = PythonOperator(
+            task_id='process_silver_data',
+            python_callable=process_silver_data,
+            op_kwargs={
+                'start_date': start_date_str,
+                'end_date': end_date_str,
+                'bronze_directory': BRONZE_DIR,
+                'silver_directory': SILVER_DIR,
+            },
+            provide_context=True,
+        )
 
-# Define task dependencies
-task_data_processing >> task_training >> task_inference >> task_monitoring
+        task_gold = PythonOperator(
+            task_id='process_gold_features',
+            python_callable=process_gold_features,
+            op_kwargs={
+                'start_date': start_date_str,
+                'end_date': end_date_str,
+                'silver_directory': SILVER_DIR,
+                'gold_directory': GOLD_FEATURE_DIR,
+            },
+            provide_context=True,
+        )
+
+        task_bronze >> task_silver >> task_gold
+
+    with TaskGroup(
+        group_id='model_training',
+        tooltip='Train and select best model'
+    ) as training_group:
+
+        task_prepare_data = PythonOperator(
+            task_id='prepare_training_data',
+            python_callable=prepare_training_data,
+            op_kwargs={
+                'gold_feature_path': GOLD_FEATURE_DIR,
+                'training_cutoff_date': training_cutoff_date_str,
+                'output_path': DATA_PREPARED_DIR,
+            },
+            provide_context=True,
+        )
+
+        task_train_lr = PythonOperator(
+            task_id='train_logistic_regression',
+            python_callable=train_logistic_regression,
+            op_kwargs={
+                'prepared_data_path': DATA_PREPARED_DIR,
+                'model_output_path': MODEL_TEMP_DIR,
+            },
+            provide_context=True,
+        )
+
+        task_train_rf = PythonOperator(
+            task_id='train_random_forest',
+            python_callable=train_random_forest,
+            op_kwargs={
+                'prepared_data_path': DATA_PREPARED_DIR,
+                'model_output_path': MODEL_TEMP_DIR,
+            },
+            provide_context=True,
+        )
+
+        task_evaluate = PythonOperator(
+            task_id='evaluate_and_select_best',
+            python_callable=evaluate_and_select_best_model,
+            op_kwargs={
+                'temp_model_path': MODEL_TEMP_DIR,
+                'prepared_data_path': DATA_PREPARED_DIR,
+            },
+            provide_context=True,
+        )
+
+        task_save_model = PythonOperator(
+            task_id='save_best_model',
+            python_callable=save_best_model,
+            op_kwargs={
+                'temp_model_path': MODEL_TEMP_DIR,
+                'model_artifacts_path': MODEL_ARTIFACTS_DIR,
+                'model_metadata_path': MODEL_METADATA_DIR,
+            },
+            provide_context=True,
+        )
+
+        task_prepare_data >> [task_train_lr, task_train_rf] >> task_evaluate >> task_save_model
+
+    with TaskGroup(
+        group_id='model_inference',
+        tooltip='Load model and make predictions'
+    ) as inference_group:
+
+        task_load_model = PythonOperator(
+            task_id='load_model',
+            python_callable=load_model_for_inference,
+            op_kwargs={
+                'model_artifacts_path': MODEL_ARTIFACTS_DIR,
+                'model_metadata_path': MODEL_METADATA_DIR,
+            },
+            provide_context=True,
+        )
+
+        task_prepare_inference = PythonOperator(
+            task_id='prepare_inference_data',
+            python_callable=prepare_inference_data,
+            op_kwargs={
+                'gold_feature_path': GOLD_FEATURE_DIR,
+                'inference_start_date': inference_start_date_str,
+                'inference_end_date': inference_end_date_str,
+                'output_path': DATA_INFERENCE_DIR,
+            },
+            provide_context=True,
+        )
+
+        task_predict = PythonOperator(
+            task_id='execute_predictions',
+            python_callable=execute_predictions,
+            op_kwargs={
+                'model_info_path': '/app/data/model_info.json',
+                'inference_data_path': DATA_INFERENCE_DIR,
+                'predictions_output_path': PREDICTIONS_DIR,
+                'prediction_date': inference_end_date_str,
+            },
+            provide_context=True,
+        )
+
+        task_load_model >> task_prepare_inference >> task_predict
+
+    with TaskGroup(
+        group_id='model_monitoring',
+        tooltip='Monitor performance and drift'
+    ) as monitoring_group:
+
+        task_load_monitoring_data = PythonOperator(
+            task_id='load_monitoring_data',
+            python_callable=load_monitoring_data,
+            op_kwargs={
+                'predictions_path': PREDICTIONS_DIR,
+                'gold_feature_path': GOLD_FEATURE_DIR,
+                'output_path': DATA_MONITORING_DIR,
+            },
+            provide_context=True,
+        )
+
+        task_performance = PythonOperator(
+            task_id='calculate_performance_metrics',
+            python_callable=calculate_performance_metrics,
+            op_kwargs={
+                'monitoring_data_path': DATA_MONITORING_DIR,
+                'output_path': DATA_MONITORING_DIR,
+            },
+            provide_context=True,
+        )
+
+        task_drift = PythonOperator(
+            task_id='calculate_drift_metrics',
+            python_callable=calculate_drift_metrics,
+            op_kwargs={
+                'monitoring_data_path': DATA_MONITORING_DIR,
+                'baseline_date': monitoring_baseline_date_str,
+                'output_path': DATA_MONITORING_DIR,
+            },
+            provide_context=True,
+        )
+
+        task_check = PythonOperator(
+            task_id='check_thresholds',
+            python_callable=check_thresholds,
+            op_kwargs={
+                'monitoring_data_path': DATA_MONITORING_DIR,
+                'performance_threshold': performance_threshold,
+                'drift_threshold': drift_threshold,
+            },
+            provide_context=True,
+        )
+
+        task_report = PythonOperator(
+            task_id='generate_report',
+            python_callable=generate_monitoring_report,
+            op_kwargs={
+                'monitoring_data_path': DATA_MONITORING_DIR,
+                'output_path': MONITORING_DIR,
+                'report_date': end_date_str,
+            },
+            provide_context=True,
+        )
+
+        task_load_monitoring_data >> [task_performance, task_drift] >> task_check >> task_report
+
+    def check_retraining_needed(**context):
+        ti = context['ti']
+
+        retraining_status = ti.xcom_pull(
+            task_ids='model_monitoring.check_thresholds',
+            key='needs_retraining'
+        )
+
+        if retraining_status:
+            print("  Retraining needed - triggering alert")
+            return 'send_retraining_alert'
+        else:
+            print(" Model performance is satisfactory")
+            return 'pipeline_complete'
+
+    branch_retraining = BranchPythonOperator(
+        task_id='branch_check_retraining',
+        python_callable=check_retraining_needed,
+        provide_context=True,
+    )
+
+    send_alert = PythonOperator(
+        task_id='send_retraining_alert',
+        python_callable=lambda **context: print(
+            " ALERT: Model retraining required! Check monitoring reports."
+        ),
+        provide_context=True,
+    )
+
+    end = DummyOperator(
+        task_id='pipeline_complete',
+        trigger_rule='none_failed_min_one_success',
+    )
+
+    start >> data_processing_group >> training_group >> inference_group >> monitoring_group
+    monitoring_group >> branch_retraining >> [send_alert, end]
+    send_alert >> end
+
+print("=" * 60)
+print("ML PIPELINE CONFIGURATION SUMMARY")
+print("=" * 60)
+print(f" Data Processing:")
+print(f"   Snapshot Date:  {snapshot_date_str}")
+print(f"   Start Date:     {start_date_str}")
+print(f"   End Date:       {end_date_str}")
+print()
+print(f" Model Training:")
+print(f"   Cutoff Date:    {training_cutoff_date_str}")
+print()
+print(f" Model Inference:")
+print(f"   Start Date:     {inference_start_date_str}")
+print(f"   End Date:       {inference_end_date_str}")
+print()
+print(f" Model Monitoring:")
+print(f"   Baseline Date:  {monitoring_baseline_date_str}")
+print(f"   AUC Threshold:  {performance_threshold['auc']}")
+print(f"   Drift Threshold: {drift_threshold}")
+print("=" * 60)

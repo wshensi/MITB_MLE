@@ -1,0 +1,10 @@
+{
+    "prediction_date": "2024-12-01",
+    "n_predictions": 2500,
+    "mean_probability": 0.4989220314232385,
+    "std_probability": 0.03391469322466872,
+    "predicted_defaults": 1205,
+    "default_rate": 0.482,
+    "model_name": "logistic_regression",
+    "model_auc": 0.4771722722175008
+}

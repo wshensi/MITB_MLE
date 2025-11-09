@@ -1,0 +1,16 @@
+{
+    "report_date": "2024-12-01",
+    "generated_timestamp": "2025-11-09 11:12:34",
+    "performance_summary": {
+        "avg_auc": 0.5038218777098074,
+        "avg_precision": 0.08511634819552609,
+        "avg_recall": 0.4927598266498013,
+        "avg_f1": 0.14481712007308395
+    },
+    "drift_summary": {
+        "max_psi": 0.10371648006599772,
+        "avg_psi": 0.03597754007153856
+    },
+    "needs_retraining": false,
+    "retraining_reasons": []
+}

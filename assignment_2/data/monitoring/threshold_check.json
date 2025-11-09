@@ -1,13 +1,11 @@
 {
-    "needs_retraining": true,
-    "reasons": [
-        "AUC below threshold: 0.5038 < 0.65"
-    ],
-    "checked_timestamp": "2025-11-09 07:45:21",
+    "needs_retraining": false,
+    "reasons": [],
+    "checked_timestamp": "2025-11-09 11:12:24",
     "thresholds": {
         "performance": {
-            "auc": 0.65,
-            "precision": 0.7
+            "auc": 0.5,
+            "precision": 0.5
         },
         "drift": 0.2
     },

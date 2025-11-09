@@ -1,50 +1,79 @@
-# last updated Oct 2025
-# Using official OpenJDK 17 image to avoid apt package issues
-FROM mcr.microsoft.com/openjdk/jdk:17-ubuntu
+FROM python:3.12-slim
 
-# Set non-interactive mode to prevent apt from hanging
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Replace apt sources with domestic mirrors (for faster download)
-RUN sed -i 's/deb.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list && \
-    sed -i 's/security.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
-
-# Install Python, pip, procps (for ps command) and bash
+# Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        python3 \
-        python3-pip \
+        default-jdk \
+        gcc \
+        g++ \
         procps \
-        bash \
         curl \
-        && \
-    apt-get clean && \
+        bash && \
     rm -rf /var/lib/apt/lists/*
 
-# Create python / pip command symlinks
-RUN ln -sf /usr/bin/python3 /usr/bin/python && \
-    ln -sf /usr/bin/pip3 /usr/bin/pip
+ENV JAVA_HOME=/usr/lib/jvm/default-java
+ENV PATH=$PATH:$JAVA_HOME/bin
 
-# Upgrade pip to latest version
-RUN python -m pip install --upgrade pip
-
-# Set working directory
 WORKDIR /app
 
-# Copy dependency files to container
-COPY requirements.txt ./
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip
 
-# Configure pip to use domestic source and install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+# Copy and install requirements FIRST
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt && \
+    python -c "import airflow; print(f'✓ Airflow {airflow.__version__} installed')" && \
+    python -c "import sklearn; print(f'✓ scikit-learn {sklearn.__version__}')" && \
+    python -c "import imblearn; print(f'✓ imbalanced-learn {imblearn.__version__}')"
 
-# Expose JupyterLab default port
-EXPOSE 8888
+# Create directory structure
+RUN mkdir -p \
+    /app/dags \
+    /app/logs \
+    /app/plugins \
+    /app/utils \
+    /app/models/model_artifacts \
+    /app/models/model_metadata \
+    /app/datamart/bronze \
+    /app/datamart/silver \
+    /app/datamart/gold/feature_label_store \
+    /app/datamart/gold/predictions \
+    /app/datamart/gold/monitoring_metrics \
+    /app/data
 
-# Mount working directory for notebooks
-VOLUME /app
+ENV AIRFLOW_HOME=/app
 
-# Enable JupyterLab
-ENV JUPYTER_ENABLE_LAB=yes
+# Copy utils folder (critical for ML pipeline)
+COPY utils/ /app/utils/
 
-# Startup command: Run JupyterLab
-CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--notebook-dir=/app"]
+# Copy dags folder
+COPY dags/ /app/dags/
+
+# Copy main Python files
+COPY *.py /app/
+
+# Copy data folder (comment out if you don't have a data folder)
+# COPY data/ /app/data/
+
+# Verify critical files are present
+RUN echo "=== Verifying file structure ===" && \
+    ls -la /app/ && \
+    echo "" && \
+    echo "=== Utils folder ===" && \
+    ls -la /app/utils/ && \
+    test -f /app/utils/__init__.py && echo "✓ __init__.py" || echo "✗ __init__.py MISSING" && \
+    test -f /app/utils/model_training.py && echo "✓ model_training.py" || echo "✗ model_training.py MISSING" && \
+    test -f /app/utils/model_inference.py && echo "✓ model_inference.py" || echo "✗ model_inference.py MISSING" && \
+    test -f /app/utils/model_monitoring.py && echo "✓ model_monitoring.py" || echo "✗ model_monitoring.py MISSING" && \
+    echo "" && \
+    echo "=== Dags folder ===" && \
+    ls -la /app/dags/ && \
+    echo "" && \
+    echo "=== Testing Python imports ===" && \
+    python -c "import sys; sys.path.insert(0, '/app'); from utils.model_training import train_and_save_best_model; print('✓ Utils imports successful')" || echo "✗ Utils import FAILED"
+
+EXPOSE 8080 8888
+
+CMD ["bash"]

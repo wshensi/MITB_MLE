@@ -1,4 +1,33 @@
 services:
+  # Airflow All-in-One
+  airflow:
+    build: .
+    container_name: airflow_ml_pipeline
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////app/airflow.db
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=true
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=true
+      - AIRFLOW__CORE__ENABLE_XCOM_PICKLING=true
+      - AIRFLOW__WEBSERVER__SECRET_KEY=mysecretkey
+      - JAVA_HOME=/usr/lib/jvm/default-java
+    command: >
+      bash -c "
+      rm -f /app/airflow.db &&
+      airflow db migrate &&
+      airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin 2>/dev/null || true &&
+      airflow webserver --port 8080 &
+      sleep 5 &&
+      airflow scheduler
+      "
+    restart: on-failure:3
+
+  # Jupyter Lab
   jupyter:
     build: .
     container_name: jupyter_lab
@@ -8,4 +37,9 @@ services:
       - .:/app
     environment:
       - JUPYTER_ENABLE_LAB=yes
-    command: ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--notebook-dir=/app", "--ServerApp.token=''", "--ServerApp.disable_check_xsrf=True"]
+      - JAVA_HOME=/usr/lib/jvm/default-java
+    command: >
+      bash -c "
+      jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --notebook-dir=/app --ServerApp.token='' --ServerApp.disable_check_xsrf=True
+      "
+    restart: always

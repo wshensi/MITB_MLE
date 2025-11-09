@@ -1,0 +1,41 @@
+# Logs
+logs/
+*.log
+
+# Airflow database
+airflow.db
+airflow.db-shm
+airflow.db-wal
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+.dockerignore
+
+# DO NOT ignore utils/ - we need it!
+# DO NOT ignore dags/ - we need it!

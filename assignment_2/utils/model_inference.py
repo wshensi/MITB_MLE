@@ -1,6 +1,7 @@
 """
 Model Inference Module
 Loads trained model and makes predictions on new data
+Fixed: Column name consistency (Customer_ID instead of user_id)
 """
 import os
 import json
@@ -41,7 +42,7 @@ class ModelInference:
         """Load model and metadata"""
         # Load model
         self.model = joblib.load(model_path)
-        print(f"Model loaded from: {model_path}")
+        print(f"✓ Model loaded from: {model_path}")
         
         # Load metadata
         if os.path.exists(metadata_path):
@@ -49,20 +50,20 @@ class ModelInference:
                 self.metadata = json.load(f)
             
             self.feature_columns = self.metadata['feature_columns']
-            print(f"Model: {self.metadata['model_name']}")
-            print(f"Training metrics: {self.metadata['metrics']}")
+            print(f"✓ Model: {self.metadata['model_name']}")
+            print(f"✓ Training metrics: {self.metadata['metrics']}")
         else:
-            print(f"Warning: Metadata file not found: {metadata_path}")
+            print(f"⚠️  Warning: Metadata file not found: {metadata_path}")
     
     def load_inference_data(self, gold_feature_path, start_date, end_date):
         """Load data for inference within date range"""
-        print(f"Loading inference data from {start_date} to {end_date}")
+        print(f"\nLoading inference data from {start_date} to {end_date}")
         
         # Read all parquet files
         files = glob.glob(os.path.join(gold_feature_path, "*.parquet"))
         
         if not files:
-            print(f"No parquet files found in {gold_feature_path}")
+            print(f"❌ No parquet files found in {gold_feature_path}")
             return None
         
         df_list = []
@@ -79,33 +80,70 @@ class ModelInference:
                 df_list.append(df_filtered)
         
         if not df_list:
-            print(f"No data found in date range {start_date} to {end_date}")
+            print(f"❌ No data found in date range {start_date} to {end_date}")
             return None
         
         df = pd.concat(df_list, ignore_index=True)
-        print(f"Total samples for inference: {len(df)}")
+        print(f"✓ Total samples for inference: {len(df):,}")
         
         return df
     
     def prepare_features(self, df):
         """Prepare features for inference"""
+        # Smart detection of ID columns
+        # Try to find customer ID column (different names in different datasets)
+        possible_customer_ids = ['Customer_ID', 'user_id', 'customer_id', 'cust_id']
+        customer_id_col = None
+        for col in possible_customer_ids:
+            if col in df.columns:
+                customer_id_col = col
+                break
+        
+        if customer_id_col is None:
+            raise ValueError(
+                f"Could not find customer ID column. "
+                f"Tried: {possible_customer_ids}. "
+                f"Available columns: {df.columns.tolist()}"
+            )
+        
+        print(f"✓ Using customer ID column: {customer_id_col}")
+        
+        # Define ID columns
+        id_cols = [customer_id_col, 'loan_id', 'snapshot_date']
+        
+        # Check if all ID columns exist
+        missing_id_cols = [col for col in id_cols if col not in df.columns]
+        if missing_id_cols:
+            raise ValueError(
+                f"Missing ID columns: {missing_id_cols}. "
+                f"Available: {df.columns.tolist()}"
+            )
+        
         # Store ID columns
-        id_cols = ['user_id', 'loan_id', 'snapshot_date']
         id_df = df[id_cols].copy()
+        
+        # Rename customer ID to standard name for consistency
+        if customer_id_col != 'Customer_ID':
+            id_df = id_df.rename(columns={customer_id_col: 'Customer_ID'})
         
         # Get features in same order as training
         if self.feature_columns:
+            print(f"✓ Using {len(self.feature_columns)} features from training")
+            
             # Use exact features from training
             missing_cols = [col for col in self.feature_columns if col not in df.columns]
             if missing_cols:
-                print(f"Warning: Missing columns in inference data: {missing_cols}")
+                print(f"⚠️  Warning: Missing {len(missing_cols)} features in inference data")
+                print(f"   Adding them with zero values: {missing_cols[:5]}...")
                 for col in missing_cols:
                     df[col] = 0
             
             X = df[self.feature_columns].copy()
         else:
-            # Fallback: use all columns except IDs
-            feature_cols = [col for col in df.columns if col not in id_cols]
+            print("⚠️  Warning: No feature columns in metadata, using all non-ID columns")
+            # Fallback: use all columns except IDs and labels
+            exclude_cols = id_cols + ['label_default_30dpd', 'default_flag', 'label', 'target']
+            feature_cols = [col for col in df.columns if col not in exclude_cols]
             X = df[feature_cols].copy()
         
         # Handle missing values
@@ -116,6 +154,8 @@ class ModelInference:
             X[col] = pd.to_numeric(X[col], errors='coerce')
         X = X.fillna(0)
         
+        print(f"✓ Prepared {len(X):,} samples with {len(X.columns)} features")
+        
         return X, id_df
     
     def predict(self, X):
@@ -123,11 +163,19 @@ class ModelInference:
         if self.model is None:
             raise ValueError("Model not loaded. Call load_model() first.")
         
+        print(f"\n{'='*60}")
+        print("Making predictions...")
+        print(f"{'='*60}")
+        
         # Get probability scores
         pred_proba = self.model.predict_proba(X)[:, 1]
         
         # Get binary predictions (default threshold 0.5)
         pred_binary = self.model.predict(X)
+        
+        print(f"✓ Predictions completed")
+        print(f"  Mean probability: {pred_proba.mean():.4f}")
+        print(f"  Predicted defaults: {pred_binary.sum():,} ({pred_binary.mean()*100:.2f}%)")
         
         return pred_proba, pred_binary
     
@@ -151,10 +199,13 @@ class ModelInference:
         )
         predictions_df.to_parquet(output_file, index=False)
         
-        print(f"\nPredictions saved to: {output_file}")
-        print(f"Number of predictions: {len(predictions_df)}")
-        print(f"Average prediction probability: {pred_proba.mean():.4f}")
-        print(f"Predicted defaults: {pred_binary.sum()} ({pred_binary.mean()*100:.2f}%)")
+        print(f"\n{'='*60}")
+        print(f"✓ Predictions saved to: {output_file}")
+        print(f"{'='*60}")
+        print(f"  Number of predictions: {len(predictions_df):,}")
+        print(f"  Average probability: {pred_proba.mean():.4f}")
+        print(f"  Predicted defaults: {pred_binary.sum():,} ({pred_binary.mean()*100:.2f}%)")
+        print(f"{'='*60}")
         
         return output_file, predictions_df
 
@@ -169,7 +220,9 @@ def run_inference_for_period(
 ):
     """Run inference for a time period"""
     print("\n" + "="*60)
-    print("STARTING MODEL INFERENCE")
+    print("MODEL INFERENCE PIPELINE")
+    print("="*60)
+    print(f"Date range: {start_date} to {end_date}")
     print("="*60)
     
     # Initialize inference engine
@@ -179,31 +232,50 @@ def run_inference_for_period(
     try:
         model_path, metadata_path = inference.load_latest_model(model_dir, metadata_dir)
     except Exception as e:
-        print(f"Error loading model: {str(e)}")
+        print(f"❌ Error loading model: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None
     
     # Load inference data
     df = inference.load_inference_data(gold_feature_path, start_date, end_date)
     
     if df is None or len(df) == 0:
-        print("No data available for inference.")
+        print("❌ No data available for inference.")
         return None
     
     # Prepare features
-    X, id_df = inference.prepare_features(df)
+    try:
+        X, id_df = inference.prepare_features(df)
+    except Exception as e:
+        print(f"❌ Error preparing features: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
     
     # Make predictions
-    print("\nMaking predictions...")
-    pred_proba, pred_binary = inference.predict(X)
+    try:
+        pred_proba, pred_binary = inference.predict(X)
+    except Exception as e:
+        print(f"❌ Error making predictions: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
     
     # Save predictions
-    output_file, predictions_df = inference.save_predictions(
-        id_df, pred_proba, pred_binary, 
-        predictions_output_path, end_date
-    )
+    try:
+        output_file, predictions_df = inference.save_predictions(
+            id_df, pred_proba, pred_binary, 
+            predictions_output_path, end_date
+        )
+    except Exception as e:
+        print(f"❌ Error saving predictions: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
     
     print("\n" + "="*60)
-    print("INFERENCE COMPLETED SUCCESSFULLY")
+    print("✅ INFERENCE COMPLETED SUCCESSFULLY")
     print("="*60)
     
     return {

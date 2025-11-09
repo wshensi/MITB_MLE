@@ -1,0 +1,54 @@
+{
+    "model_name": "random_forest",
+    "model_path": "/app/models/model_artifacts/random_forest_20251109_043601.joblib",
+    "timestamp": "20251109_043601",
+    "metrics": {
+        "auc": 0.5721671149966375,
+        "precision": 0.11092671849069788,
+        "recall": 1.0,
+        "f1": 0.19970123437377152,
+        "confusion_matrix": [
+            [
+                1717,
+                10179
+            ],
+            [
+                0,
+                1270
+            ]
+        ]
+    },
+    "feature_columns": [
+        "due_amt",
+        "Age",
+        "Annual_Income",
+        "Monthly_Inhand_Salary",
+        "Num_Bank_Accounts",
+        "Num_Credit_Card",
+        "Interest_Rate",
+        "Num_of_Loan",
+        "Delay_from_due_date",
+        "Num_of_Delayed_Payment",
+        "Changed_Credit_Limit",
+        "Num_Credit_Inquiries",
+        "Outstanding_Debt",
+        "Total_EMI_per_month",
+        "Amount_invested_monthly",
+        "Monthly_Balance",
+        "Credit_Mix_Score",
+        "Credit_History_Months",
+        "Payment_Min_Amount_Flag",
+        "Type_of_Loan_Count"
+    ],
+    "config": {
+        "dpd_threshold": 30,
+        "mob_threshold": 6,
+        "test_size": 0.2,
+        "random_state": 42
+    },
+    "data_leakage_prevention": {
+        "temporal_split": true,
+        "leakage_features_removed": true,
+        "description": "Removed dpd, overdue_amt, and other post-loan features"
+    }
+}
